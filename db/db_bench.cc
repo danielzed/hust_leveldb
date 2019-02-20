@@ -17,6 +17,9 @@
 #include "util/random.h"
 #include "util/testutil.h"
 
+#include <cmath>
+#include <ctime>
+
 // Comma-separated list of operations to run in the specified order
 //   Actual benchmarks:
 //      fillseq       -- write N values in sequential key order in async mode
@@ -41,27 +44,15 @@
 //      sstables    -- Print sstable info
 //      heapprofile -- Dump a heap profile (if supported by this port)
 static const char* FLAGS_benchmarks =
-    "fillseq,"
-    "fillsync,"
     "fillrandom,"
-    "overwrite,"
-    "readrandom,"
     "readrandom,"  // Extra run to allow previous compactions to quiesce
     "readseq,"
-    "readreverse,"
-    "compact,"
-    "readrandom,"
-    "readseq,"
-    "readreverse,"
-    "fill100K,"
-    "crc32c,"
-    "snappycomp,"
-    "snappyuncomp,"
-    "acquireload,"
+    "stats,"
+    "sstables,"
     ;
 
 // Number of key/values to place in database
-static int FLAGS_num = 1000000;
+static int FLAGS_num = 5000000;
 
 // Number of read operations to do.  If negative, do FLAGS_num reads.
 static int FLAGS_reads = -1;
@@ -70,14 +61,14 @@ static int FLAGS_reads = -1;
 static int FLAGS_threads = 1;
 
 // Size of each value
-static int FLAGS_value_size = 100;
+static int FLAGS_value_size = 1000;
 
 // Arrange to generate values that shrink to this fraction of
 // their original size after compression
 static double FLAGS_compression_ratio = 0.5;
 
 // Print histogram of operation timings
-static bool FLAGS_histogram = false;
+static bool FLAGS_histogram = true;
 
 // Number of bytes to buffer in memtable before compacting
 // (initialized to default value by "main")
@@ -116,6 +107,141 @@ static const char* FLAGS_db = nullptr;
 namespace leveldb {
 
 namespace {
+static const double ZIPFIAN_CONSTANT = 0.99;
+class ZipfianGenerator{
+  private:
+    long items;
+    long base;
+    double zipfianconstant;
+    double alpha,zetan,eta,theta,zeta2theta;
+    long countforzeta;
+    bool allowitemcountdecrease = false;
+
+  public:
+    class HotspotIntegerGenerator{
+      private:
+        long lowerBound;
+        long upperBound,hotInterval,coldInterval;
+        double hotsetFraction,hotOpnFraction;
+      public:
+        HotspotIntegerGenerator(long lowerBound,long upperBound,double hotsetFraction,double hotOpnFraction){
+          if(hotsetFraction<0.0 || hotsetFraction > 1.0){
+            printf("hotset fraction out of range,set to 0.0\n");
+            hotsetFraction = 0.0;
+          }
+          if(hotOpnFraction <0.0 || hotOpnFraction>1.0){
+            printf("hotOPnFraction out of range\n");
+            hotOpnFraction = 0.0;
+          }
+          if(lowerBound>upperBound){
+            printf("lower < upper should\n");
+            long temp = lowerBound;
+            lowerBound = upperBound;
+            upperBound = temp;
+          }
+          this->lowerBound = lowerBound;
+          this->upperBound = upperBound;
+          this->hotsetFraction = hotsetFraction;
+          this->hotOpnFraction = hotOpnFraction;
+          long interval = upperBound-lowerBound+1;
+          this->hotInterval = (int)(interval*hotsetFraction);
+          this->coldInterval = interval - this->hotInterval;
+        }
+        long nextValue(){
+          long value = 0;
+          long r = (double)rand()/RAND_MAX;
+          if(r < hotOpnFraction){
+            value = lowerBound+labs(rand())%hotInterval;
+          }else{
+            value = lowerBound+hotInterval+labs(rand())%coldInterval;
+          }
+          return value;
+        }
+    };
+    ZipfianGenerator(long min,long max,double zipfianconstant,double zetan=0){
+      this->zipfianconstant = zipfianconstant;
+      if(zetan == 0)
+        zetan = zetastatic(max-min+1,zipfianconstant);
+      items = max-min+1;
+      base = min;
+      theta = zipfianconstant;
+      zeta2theta = zeta(2,theta);
+      alpha = 1.0/(1.0-theta);
+      this->zetan = zetan;
+      eta = (1.0-pow(2.0/items,1-theta))/(1.0-zeta2theta/zetan);
+      srand((int)(time(0)));
+    }
+    double zeta(long n,double thetaVal){
+      return zetastatic(n,thetaVal);
+    }
+    double zetastatic(long n,double theta){
+      return zetastatic(0,n,theta,0);
+    }
+    double zetastatic(long st,long n,double theta,double initialsum){
+      double sum=initialsum;
+      for(long i=st;i<n;i++)
+      {
+        sum+=1.0/(pow(i+1,theta));
+      }
+      return sum;
+    }
+    long nextValue(){
+      double u = (double)rand()/RAND_MAX;
+      double uz = u*zetan;
+      if(uz<1.0){
+        return base;
+      }
+      if(uz<1.0+pow(0.5,theta)){
+        return base+1;
+      }
+      long ret = base+(long)(items*pow(eta*u-eta+1,alpha));
+      return ret;
+    }
+};
+class ScrambledZipfianGenerator{
+  private:
+    const double ZETAN = 26.46902820178302;
+    const double USED_ZIPFIAN_CONSTANT = 0.99;
+    const long ITEM_COUNT = 10000000000L;
+    ZipfianGenerator* gen;
+    long min,max,itemcount;
+  public:
+    ScrambledZipfianGenerator(long items){
+      ScrambledZipfianGenerator(0,items-1);
+    }
+    ScrambledZipfianGenerator(long min,long max){
+      ScrambledZipfianGenerator(min,max,ZIPFIAN_CONSTANT);
+    }
+    ScrambledZipfianGenerator(long min,long max,double zipfianconstant){
+      this->min = min;
+      this->max = max;
+      itemcount = max-min+1;
+      if(zipfianconstant == USED_ZIPFIAN_CONSTANT){
+        gen = new ZipfianGenerator(0,ITEM_COUNT,zipfianconstant,ZETAN);
+      }else{
+        gen = new ZipfianGenerator(0,ITEM_COUNT,zipfianconstant);
+      }
+    }
+    ~ScrambledZipfianGenerator(){
+      delete gen;
+    }
+    long fnvhash64(long val){
+      long hashval = 0xCBF29CE484222325L;
+      for(int i=0;i<8;i++){
+        long octet = val&0x00ff;
+        val = val>>8;
+        hashval = hashval^octet;
+        hashval = hashval*1099511628211L;
+      }
+      return labs(hashval);
+    }
+    long nextValue(){
+      long ret = gen->nextValue();
+      ret = min+fnvhash64(ret)%itemcount;
+      return ret;
+    }
+};
+
 leveldb::Env* g_env = nullptr;
 
 // Helper for quickly generating random data.
@@ -316,6 +442,7 @@ struct ThreadState {
 
 class Benchmark {
  private:
+ //测试将ｄｂ当做黑盒，为什么回持有缓存和过滤器的指针呢？
   Cache* cache_;
   const FilterPolicy* filter_policy_;
   DB* db_;
@@ -745,13 +872,15 @@ class Benchmark {
     }
 
     RandomGenerator gen;
+    ScrambledZipfianGenerator keychooser(0,num_-1,ZIPFIAN_CONSTANT);
     WriteBatch batch;
     Status s;
     int64_t bytes = 0;
     for (int i = 0; i < num_; i += entries_per_batch_) {
       batch.Clear();
       for (int j = 0; j < entries_per_batch_; j++) {
-        const int k = seq ? i+j : (thread->rand.Next() % FLAGS_num);
+        //const int k = seq ? i+j : (thread->rand.Next() % FLAGS_num);
+        const int k = seq ? i+j : (keychooser.nextValue() % FLAGS_num);
         char key[100];
         snprintf(key, sizeof(key), "%016d", k);
         batch.Put(key, gen.Generate(value_size_));
@@ -922,7 +1051,8 @@ class Benchmark {
     if (!db_->GetProperty(key, &stats)) {
       stats = "(failed)";
     }
-    fprintf(stdout, "\n%s\n", stats.c_str());
+    FILE* out = fopen64("loga","w+");
+    fprintf(out, "\n%s\n", stats.c_str());
   }
 
   static void WriteToFile(void* arg, const char* buf, int n) {

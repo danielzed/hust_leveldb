@@ -1292,7 +1292,37 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   delete[] list;
   return result;
 }
-
+bool VersionSet::PickTrivialCompaction(Compaction* c,int level)
+{
+  for(int i = 0; i<current_->files_[level].size(); i++)
+  {
+    bool flag = false;
+    FileMetaData* f = current_->files_[level][i];
+    for(int j = 0; (j+1)<current_->files_[level+1].size(); j++)
+    {
+      FileMetaData* fj = current_->files_[level+1][j];
+      if(j==0)
+      {
+        if(icmp_.Compare(f->largest.Encode(),fj->smallest.Encode())<=0)
+        {
+          flag = true;
+          break;
+        }
+      }
+      if(icmp_.Compare(f->smallest.Encode(),fj->largest.Encode())>=0 && icmp_.Compare(f->largest.Encode(),fj->smallest.Encode())<=0)
+      {
+        flag = true;
+        break;
+      }
+    }
+    if(flag)
+    {
+      c->inputs_[0].push_back(f);
+      return true;
+    }
+  }
+  return false;
+}
 Compaction* VersionSet::PickCompaction() {
   Compaction* c;
   int level;
@@ -1306,14 +1336,16 @@ Compaction* VersionSet::PickCompaction() {
     assert(level >= 0);
     assert(level+1 < config::kNumLevels);
     c = new Compaction(options_, level);
-
-    // Pick the first file that comes after compact_pointer_[level]
-    for (size_t i = 0; i < current_->files_[level].size(); i++) {
-      FileMetaData* f = current_->files_[level][i];
-      if (compact_pointer_[level].empty() ||
-          icmp_.Compare(f->largest.Encode(), compact_pointer_[level]) > 0) {
-        c->inputs_[0].push_back(f);
-        break;
+    //if(!PickTrivialCompaction(c,level))
+    {
+      // Pick the first file that comes after compact_pointer_[level]
+      for (size_t i = 0; i < current_->files_[level].size(); i++) {
+        FileMetaData* f = current_->files_[level][i];
+        if (compact_pointer_[level].empty() ||
+            icmp_.Compare(f->largest.Encode(), compact_pointer_[level]) > 0) {
+          c->inputs_[0].push_back(f);
+          break;
+        }
       }
     }
     if (c->inputs_[0].empty()) {

@@ -272,7 +272,7 @@ class VersionSet {
 
   friend class Compaction;
   friend class Version;
-
+  bool PickTrivialCompaction(Compaction* c,int level);
   bool ReuseManifest(const std::string& dscname, const std::string& dscbase);
 
   void Finalize(Version* v);

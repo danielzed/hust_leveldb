@@ -701,6 +701,7 @@ void DBImpl::BackgroundCompaction() {
   bool is_manual = (manual_compaction_ != nullptr);
   InternalKey manual_end;
   if (is_manual) {
+    printf("!!!!!!!!!!!!!!!!!!!!!\n");
     ManualCompaction* m = manual_compaction_;
     c = versions_->CompactRange(m->level, m->begin, m->end);
     m->done = (c == nullptr);
