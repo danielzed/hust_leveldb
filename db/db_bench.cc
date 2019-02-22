@@ -19,6 +19,7 @@
 
 #include <cmath>
 #include <ctime>
+#include <iostream>
 
 // Comma-separated list of operations to run in the specified order
 //   Actual benchmarks:
@@ -52,7 +53,7 @@ static const char* FLAGS_benchmarks =
     ;
 
 // Number of key/values to place in database
-static int FLAGS_num = 5000000;
+static int FLAGS_num = 500000;
 
 // Number of read operations to do.  If negative, do FLAGS_num reads.
 static int FLAGS_reads = -1;
@@ -198,11 +199,12 @@ class ZipfianGenerator{
       return ret;
     }
 };
+const long ITEM_COUNT = 10000000000L;
 class ScrambledZipfianGenerator{
   private:
     const double ZETAN = 26.46902820178302;
     const double USED_ZIPFIAN_CONSTANT = 0.99;
-    const long ITEM_COUNT = 10000000000L;
+    
     ZipfianGenerator* gen;
     long min,max,itemcount;
   public:
@@ -672,6 +674,14 @@ class Benchmark {
         RunBenchmark(num_threads, name, method);
       }
     }
+    Iterator* iter = db_->NewIterator(ReadOptions());
+    std::string key,value,res;
+    for(iter->SeekToFirst();iter->Valid();iter->Next()){
+      key = iter->key().ToString();
+      value = iter->value().ToString();
+      std::cout<<"key : "<<key<<" ";
+    }
+    delete iter;
   }
 
  private:
@@ -872,15 +882,16 @@ class Benchmark {
     }
 
     RandomGenerator gen;
-    ScrambledZipfianGenerator keychooser(0,num_-1,ZIPFIAN_CONSTANT);
+    long KEYRANGE = 100000000;
+    ScrambledZipfianGenerator keychooser(0,KEYRANGE,ZIPFIAN_CONSTANT);
     WriteBatch batch;
     Status s;
     int64_t bytes = 0;
     for (int i = 0; i < num_; i += entries_per_batch_) {
       batch.Clear();
       for (int j = 0; j < entries_per_batch_; j++) {
-        //const int k = seq ? i+j : (thread->rand.Next() % FLAGS_num);
-        const int k = seq ? i+j : (keychooser.nextValue() % FLAGS_num);
+        //const int k = seq ? i+j : (thread->rand.Next() % KEYRANGE);
+        const int k = seq ? i+j : (keychooser.nextValue() % KEYRANGE);
         char key[100];
         snprintf(key, sizeof(key), "%016d", k);
         batch.Put(key, gen.Generate(value_size_));
