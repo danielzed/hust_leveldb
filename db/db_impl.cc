@@ -525,7 +525,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
     if (base != nullptr) {
       level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
     }
-    edit->AddFile(level, meta.number, meta.file_size,
+    edit->AddFile(level,0, meta.number, meta.file_size,
                   meta.smallest, meta.largest);
   }
 
@@ -701,7 +701,6 @@ void DBImpl::BackgroundCompaction() {
   bool is_manual = (manual_compaction_ != nullptr);
   InternalKey manual_end;
   if (is_manual) {
-    printf("!!!!!!!!!!!!!!!!!!!!!\n");
     ManualCompaction* m = manual_compaction_;
     c = versions_->CompactRange(m->level, m->begin, m->end);
     m->done = (c == nullptr);
@@ -715,6 +714,7 @@ void DBImpl::BackgroundCompaction() {
         (m->end ? m->end->DebugString().c_str() : "(end)"),
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
   } else {
+    Log(options_.info_log,"pick compaction\n");
     c = versions_->PickCompaction();
   }
 
@@ -722,6 +722,7 @@ void DBImpl::BackgroundCompaction() {
   if (c == nullptr) {
     // Nothing to do
   } else if (!is_manual && c->IsTrivialMove()) {
+    /*
     // Move file to next level
     assert(c->num_input_files(0) == 1);
     FileMetaData* f = c->input(0, 0);
@@ -739,6 +740,7 @@ void DBImpl::BackgroundCompaction() {
         static_cast<unsigned long long>(f->file_size),
         status.ToString().c_str(),
         versions_->LevelSummary(&tmp));
+        */
   } else {
     CompactionState* compact = new CompactionState(c);
     status = DoCompactionWork(compact);
@@ -882,10 +884,11 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   // Add compaction outputs
   compact->compaction->AddInputDeletions(compact->compaction->edit());
   const int level = compact->compaction->level();
+  const int group = compact->compaction->group();
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     const CompactionState::Output& out = compact->outputs[i];
     compact->compaction->edit()->AddFile(
-        level + 1,
+        level + 1,group,
         out.number, out.file_size, out.smallest, out.largest);
   }
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
@@ -895,11 +898,27 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
 
-  Log(options_.info_log,  "Compacting %d@%d + %d@%d files",
+  Log(options_.info_log,  "Compacting %d@%d + %d@%d+ %d@%d+ %d@%d+ %d@%d+ %d@%d+ %d@%d+ %d@%d+ %d@%d+ %d@%d files",
       compact->compaction->num_input_files(0),
       compact->compaction->level(),
       compact->compaction->num_input_files(1),
-      compact->compaction->level() + 1);
+      compact->compaction->level(),
+      compact->compaction->num_input_files(2),
+      compact->compaction->level(),
+      compact->compaction->num_input_files(3),
+      compact->compaction->level(),
+      compact->compaction->num_input_files(4),
+      compact->compaction->level(),
+      compact->compaction->num_input_files(5),
+      compact->compaction->level(),
+      compact->compaction->num_input_files(6),
+      compact->compaction->level(),
+      compact->compaction->num_input_files(7),
+      compact->compaction->level(),
+      compact->compaction->num_input_files(8),
+      compact->compaction->level(),
+      compact->compaction->num_input_files(9),
+      compact->compaction->level() );
 
   assert(versions_->NumLevelFiles(compact->compaction->level()) > 0);
   assert(compact->builder == nullptr);
@@ -1145,11 +1164,15 @@ Status DBImpl::Get(const ReadOptions& options,
     LookupKey lkey(key, snapshot);
     if (mem->Get(lkey, value, &s)) {
       // Done
+      Log(options_.info_log,"found in mem\n");
     } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
       // Done
+      Log(options_.info_log,"found in imm\n");
     } else {
       s = current->Get(options, lkey, value, &stats);
       have_stat_update = true;
+      
+      Log(options_.info_log,"found in sstable\n");
     }
     mutex_.Lock();
   }

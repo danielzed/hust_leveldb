@@ -89,7 +89,7 @@ class Version {
   void Unref();
 
   void GetOverlappingInputs(
-      int level,
+      int level,int group,
       const InternalKey* begin,         // nullptr means before all keys
       const InternalKey* end,           // nullptr means after all keys
       std::vector<FileMetaData*>* inputs);
@@ -107,7 +107,13 @@ class Version {
   int PickLevelForMemTableOutput(const Slice& smallest_user_key,
                                  const Slice& largest_user_key);
 
-  int NumFiles(int level) const { return files_[level].size(); }
+  int NumFiles(int level) const { 
+    int sum = 0;
+    for(int group=0;group<config::kNumGroups;group++){
+      sum+=files_[level][group].size();
+    }
+    return sum; 
+    }
 
   // Return a human readable string that describes this version's contents.
   std::string DebugString() const;
@@ -117,7 +123,7 @@ class Version {
   friend class VersionSet;
 
   class LevelFileNumIterator;
-  Iterator* NewConcatenatingIterator(const ReadOptions&, int level) const;
+  Iterator* NewConcatenatingIterator(const ReadOptions&, int level,int group) const;
 
   // Call func(arg, level, f) for every file that overlaps user_key in
   // order from newest to oldest.  If an invocation of func returns
@@ -134,7 +140,7 @@ class Version {
   int refs_;                    // Number of live refs to this version
 
   // List of files per level
-  std::vector<FileMetaData*> files_[config::kNumLevels];
+  std::vector<FileMetaData*> files_[config::kNumLevels][config::kNumGroups];
 
   // Next file to compact based on seek stats.
   FileMetaData* file_to_compact_;
@@ -327,12 +333,12 @@ class Compaction {
   // Return the level that is being compacted.  Inputs from "level"
   // and "level+1" will be merged to produce a set of "level+1" files.
   int level() const { return level_; }
-
+  int group() const { return group_;}
   // Return the object that holds the edits to the descriptor done
   // by this compaction.
   VersionEdit* edit() { return &edit_; }
 
-  // "which" must be either 0 or 1
+  // "which" must be either 0 or 1 ro 2 3 4 5 6 7 8 9
   int num_input_files(int which) const { return inputs_[which].size(); }
 
   // Return the ith input file at "level()+which" ("which" must be 0 or 1).
@@ -365,15 +371,16 @@ class Compaction {
   friend class Version;
   friend class VersionSet;
 
-  Compaction(const Options* options, int level);
+  Compaction(const Options* options, int level,int group=0);
 
   int level_;
+  int group_;
   uint64_t max_output_file_size_;
   Version* input_version_;
   VersionEdit edit_;
 
   // Each compaction reads inputs from "level_" and "level_+1"
-  std::vector<FileMetaData*> inputs_[2];      // The two sets of inputs
+  std::vector<FileMetaData*> inputs_[config::kNumGroups];      // The two sets of inputs
 
   // State used to check for number of of overlapping grandparent files
   // (parent == level_ + 1, grandparent == level_ + 2)

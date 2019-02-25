@@ -77,7 +77,8 @@ void VersionEdit::EncodeTo(std::string* dst) const {
   for (size_t i = 0; i < new_files_.size(); i++) {
     const FileMetaData& f = new_files_[i].second;
     PutVarint32(dst, kNewFile);
-    PutVarint32(dst, new_files_[i].first);  // level
+    PutVarint32(dst, new_files_[i].first.first);  // level
+    PutVarint32(dst, new_files_[i].first.second);  // level
     PutVarint64(dst, f.number);
     PutVarint64(dst, f.file_size);
     PutLengthPrefixedSlice(dst, f.smallest.Encode());
@@ -105,6 +106,16 @@ static bool GetLevel(Slice* input, int* level) {
     return false;
   }
 }
+static bool GetGroup(Slice* input, int* group){
+  uint32_t v;
+  if(GetVarint32(input,&v)){
+    *group = v;
+    return true;
+  }else{
+    return false;
+  }
+
+}
 
 Status VersionEdit::DecodeFrom(const Slice& src) {
   Clear();
@@ -114,6 +125,7 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
 
   // Temporary storage for parsing
   int level;
+  int group;
   uint64_t number;
   FileMetaData f;
   Slice str;
@@ -182,11 +194,12 @@ Status VersionEdit::DecodeFrom(const Slice& src) {
 
       case kNewFile:
         if (GetLevel(&input, &level) &&
+            GetGroup(&input, &group) && 
             GetVarint64(&input, &f.number) &&
             GetVarint64(&input, &f.file_size) &&
             GetInternalKey(&input, &f.smallest) &&
             GetInternalKey(&input, &f.largest)) {
-          new_files_.push_back(std::make_pair(level, f));
+          new_files_.push_back(std::make_pair(std::make_pair(level,group), f));
         } else {
           msg = "new-file entry";
         }
@@ -249,7 +262,7 @@ std::string VersionEdit::DebugString() const {
   for (size_t i = 0; i < new_files_.size(); i++) {
     const FileMetaData& f = new_files_[i].second;
     r.append("\n  AddFile: ");
-    AppendNumberTo(&r, new_files_[i].first);
+    AppendNumberTo(&r, new_files_[i].first.first);
     r.append(" ");
     AppendNumberTo(&r, f.number);
     r.append(" ");

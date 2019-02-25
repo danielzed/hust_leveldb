@@ -53,7 +53,7 @@ static const char* FLAGS_benchmarks =
     ;
 
 // Number of key/values to place in database
-static int FLAGS_num = 500000;
+static int FLAGS_num = 5000000;
 
 // Number of read operations to do.  If negative, do FLAGS_num reads.
 static int FLAGS_reads = -1;
@@ -674,6 +674,7 @@ class Benchmark {
         RunBenchmark(num_threads, name, method);
       }
     }
+    /*
     Iterator* iter = db_->NewIterator(ReadOptions());
     std::string key,value,res;
     for(iter->SeekToFirst();iter->Valid();iter->Next()){
@@ -682,6 +683,7 @@ class Benchmark {
       std::cout<<"key : "<<key<<" ";
     }
     delete iter;
+    */
   }
 
  private:
@@ -882,7 +884,7 @@ class Benchmark {
     }
 
     RandomGenerator gen;
-    long KEYRANGE = 100000000;
+    long KEYRANGE = FLAGS_num;
     ScrambledZipfianGenerator keychooser(0,KEYRANGE,ZIPFIAN_CONSTANT);
     WriteBatch batch;
     Status s;
@@ -890,8 +892,8 @@ class Benchmark {
     for (int i = 0; i < num_; i += entries_per_batch_) {
       batch.Clear();
       for (int j = 0; j < entries_per_batch_; j++) {
-        //const int k = seq ? i+j : (thread->rand.Next() % KEYRANGE);
-        const int k = seq ? i+j : (keychooser.nextValue() % KEYRANGE);
+        const int k = seq ? i+j : (thread->rand.Next() % KEYRANGE);
+        //const int k = seq ? i+j : (keychooser.nextValue() % KEYRANGE);
         char key[100];
         snprintf(key, sizeof(key), "%016d", k);
         batch.Put(key, gen.Generate(value_size_));
@@ -942,6 +944,7 @@ class Benchmark {
       const int k = thread->rand.Next() % FLAGS_num;
       snprintf(key, sizeof(key), "%016d", k);
       if (db_->Get(options, key, &value).ok()) {
+        
         found++;
       }
       thread->stats.FinishedSingleOp();
