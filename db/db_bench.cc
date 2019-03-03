@@ -108,18 +108,7 @@ static const char* FLAGS_db = nullptr;
 namespace leveldb {
 
 namespace {
-static const double ZIPFIAN_CONSTANT = 0.99;
-class ZipfianGenerator{
-  private:
-    long items;
-    long base;
-    double zipfianconstant;
-    double alpha,zetan,eta,theta,zeta2theta;
-    long countforzeta;
-    bool allowitemcountdecrease = false;
-
-  public:
-    class HotspotIntegerGenerator{
+class HotspotIntegerGenerator{
       private:
         long lowerBound;
         long upperBound,hotInterval,coldInterval;
@@ -159,6 +148,18 @@ class ZipfianGenerator{
           return value;
         }
     };
+static const double ZIPFIAN_CONSTANT = 0.99;
+class ZipfianGenerator{
+  private:
+    long items;
+    long base;
+    double zipfianconstant;
+    double alpha,zetan,eta,theta,zeta2theta;
+    long countforzeta;
+    bool allowitemcountdecrease = false;
+
+  public:
+    
     ZipfianGenerator(long min,long max,double zipfianconstant,double zetan=0){
       this->zipfianconstant = zipfianconstant;
       if(zetan == 0)
@@ -458,6 +459,7 @@ class Benchmark {
   void PrintHeader() {
     const int kKeySize = 16;
     PrintEnvironment();
+    fprintf(stdout,"version: leveldb flamedb without hetebf\n");
     fprintf(stdout, "Keys:       %d bytes each\n", kKeySize);
     fprintf(stdout, "Values:     %d bytes each (%d bytes after compression)\n",
             FLAGS_value_size,
@@ -939,9 +941,11 @@ class Benchmark {
     ReadOptions options;
     std::string value;
     int found = 0;
+    Random rand1(10);
     for (int i = 0; i < reads_; i++) {
       char key[100];
-      const int k = thread->rand.Next() % FLAGS_num;
+      //const int k = thread->rand.Next() % FLAGS_num;
+      const int k = rand1.Next()%FLAGS_num;
       snprintf(key, sizeof(key), "%016d", k);
       if (db_->Get(options, key, &value).ok()) {
         
